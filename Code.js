@@ -1,307 +1,259 @@
+// Shamrock Bail Bonds - Google Apps Script
+// Fixed version to work with Bond Application Form
+
 /**
- * Get arrest data for the bond application form
- * Returns properly formatted object with column headers as keys
+ * Creates custom menu when spreadsheet opens
  */
-function getArrestDataForForm(bookingNumber, rowIndex) {
-  Logger.log('=== getArrestDataForForm START ===');
-  Logger.log('Booking Number: ' + bookingNumber);
-  Logger.log('Row Index: ' + rowIndex);
-  
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu("Shamrock Bail Bonds")
+    .addItem("Open Bond Application Form", "openBondForm")
+    .addItem("Generate PDF", "generatePDF")
+    .addToUi();
+}
+
+/**
+ * Opens the bond application form in a dialog
+ */
+function openBondForm() {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    Logger.log('Spreadsheet: ' + ss.getName());
-    
-    var sheet = ss.getSheetByName('Lee County Arrests');
-    
-    if (!sheet) {
-      Logger.log('ERROR: Sheet not found, trying active sheet');
-      sheet = ss.getActiveSheet();
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var row = sheet.getActiveRange().getRow();
+
+    if (row <= 1) {
+      SpreadsheetApp.getUi().alert("Please select an arrest record row first.");
+      return;
     }
-    
-    Logger.log('Sheet name: ' + sheet.getName());
-    Logger.log('Sheet last row: ' + sheet.getLastRow());
-    Logger.log('Sheet last column: ' + sheet.getLastColumn());
-    
-    // Get headers from row 1
+
+    // Store the active row in script properties so the form can access it
+    PropertiesService.getScriptProperties().setProperty("ACTIVE_ROW", row);
+
+    var html = HtmlService.createHtmlOutputFromFile("Form")
+      .setWidth(900)
+      .setHeight(700)
+      .setTitle("Bond Application Form");
+
+    SpreadsheetApp.getUi().showModalDialog(html, "Bond Application Form");
+  } catch (error) {
+    Logger.log("Error in openBondForm: " + error.toString());
+    SpreadsheetApp.getUi().alert("Error opening form: " + error.message);
+  }
+}
+
+/**
+ * Gets arrest data for the currently selected row
+ * Returns data as array of [columnName, value] pairs
+ */
+function getArrestData() {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var row = PropertiesService.getScriptProperties().getProperty("ACTIVE_ROW");
+
+    if (!row) {
+      throw new Error("No row selected. Please select an arrest record first.");
+    }
+
+    row = parseInt(row);
+
+    // Get headers (row 1)
     var lastCol = sheet.getLastColumn();
-    var headerRange = sheet.getRange(1, 1, 1, lastCol);
-    var headers = headerRange.getValues()[0];
-    
-    Logger.log('Headers count: ' + headers.length);
-    Logger.log('First 10 headers: ' + headers.slice(0, 10).join(', '));
-    
-    // Validate row index
-    if (rowIndex < 2 || rowIndex > sheet.getLastRow()) {
-      throw new Error('Invalid row index: ' + rowIndex + '. Must be between 2 and ' + sheet.getLastRow());
-    }
-    
-    // Get the data row
-    var dataRange = sheet.getRange(rowIndex, 1, 1, lastCol);
-    var dataRow = dataRange.getValues()[0];
-    
-    Logger.log('Data row length: ' + dataRow.length);
-    Logger.log('First 5 values: ' + dataRow.slice(0, 5).join(' | '));
-    
-    // Create the mapped object
-    var formData = {};
-    var mappedCount = 0;
-    var skippedCount = 0;
-    
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+    // Get data for the selected row
+    var rowData = sheet.getRange(row, 1, 1, lastCol).getValues()[0];
+
+    // Create array of [header, value] pairs
+    var formData = [];
     for (var i = 0; i < headers.length; i++) {
-      var header = headers[i];
-      var value = dataRow[i];
-      
-      // Skip empty/null/undefined headers
-      if (header && 
-          header !== null && 
-          header !== undefined && 
-          String(header).trim() !== '') {
-        
-        // Clean the header (trim whitespace)
-        var cleanHeader = String(header).trim();
-        formData[cleanHeader] = value;
-        mappedCount++;
-      } else {
-        skippedCount++;
-        Logger.log('Skipped column ' + i + ' (empty header)');
+      formData.push([headers[i], rowData[i]]);
+    }
+
+    Logger.log("Retrieved data for row " + row);
+    Logger.log("Data: " + JSON.stringify(formData));
+
+    return formData;
+  } catch (error) {
+    Logger.log("Error in getArrestData: " + error.toString());
+    throw new Error("Failed to load arrest data: " + error.message);
+  }
+}
+
+/**
+ * Saves bond application data
+ * @param {Object} formData - The form data to save
+ */
+function saveBondApplication(formData) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var row = PropertiesService.getScriptProperties().getProperty("ACTIVE_ROW");
+
+    if (!row) {
+      throw new Error("No row selected.");
+    }
+
+    row = parseInt(row);
+
+    // Get headers to map form data to columns
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+    // Map form fields to sheet columns
+    var fieldMapping = {
+      defendantName: ["Defendant Name", "Name", "Defendant", "Full Name"],
+      dob: ["DOB", "Date of Birth", "Birth Date", "Birthdate"],
+      phone: ["Phone", "Phone Number", "Telephone", "Cell", "Mobile"],
+      email: ["Email", "E-mail", "Mail"],
+      address: ["Address", "Street", "Location", "Residence"],
+      arrestDate: ["Arrest Date", "Date of Arrest", "Arrested"],
+      bookingNumber: ["Booking Number", "Booking #", "Booking", "Book Number"],
+      charges: ["Charges", "Charge", "Offense", "Crime"],
+      bondAmount: ["Bond Amount", "Bond", "Bail", "Bail Amount"],
+      courtDate: ["Court Date", "Hearing Date", "Court", "Hearing"],
+      indemnitorName: ["Indemnitor Name", "Indemnitor", "Cosigner"],
+      relationship: ["Relationship", "Relation"],
+      indemnitorPhone: ["Indemnitor Phone", "Cosigner Phone"],
+      indemnitorEmail: ["Indemnitor Email", "Cosigner Email"],
+      notes: ["Notes", "Comments", "Additional Info", "Remarks"],
+    };
+
+    // Update each field
+    for (var formField in formData) {
+      if (fieldMapping[formField]) {
+        var possibleHeaders = fieldMapping[formField];
+
+        // Find matching column
+        for (var i = 0; i < headers.length; i++) {
+          var headerLower = headers[i].toString().toLowerCase();
+
+          for (var j = 0; j < possibleHeaders.length; j++) {
+            if (headerLower.includes(possibleHeaders[j].toLowerCase())) {
+              // Update the cell
+              sheet.getRange(row, i + 1).setValue(formData[formField]);
+              Logger.log(
+                "Updated " + headers[i] + " with: " + formData[formField]
+              );
+              break;
+            }
+          }
+        }
       }
     }
-    
-    Logger.log('Mapped ' + mappedCount + ' fields, skipped ' + skippedCount + ' empty headers');
-    Logger.log('Form data keys: ' + Object.keys(formData).slice(0, 10).join(', '));
-    
-    // Log specific fields we care about
-    Logger.log('Full_Name: ' + formData['Full_Name']);
-    Logger.log('DOB: ' + formData['DOB']);
-    Logger.log('Booking_Number: ' + formData['Booking_Number']);
-    Logger.log('All_Charges: ' + formData['All_Charges']);
-    Logger.log('Bond_Amount: ' + formData['Bond_Amount']);
-    
-    Logger.log('=== getArrestDataForForm SUCCESS ===');
-    Logger.log('Returning object with ' + Object.keys(formData).length + ' keys');
-    
-    return formData;
-    
-  } catch (error) {
-    Logger.log('=== getArrestDataForForm ERROR ===');
-    Logger.log('Error type: ' + error.name);
-    Logger.log('Error message: ' + error.message);
-    Logger.log('Error stack: ' + error.stack);
-    
-    throw new Error('Failed to retrieve arrest data: ' + error.message);
-  }
-}
 
-/**
- * Submit bond application form data
- */
-function submitBondApplication(formData) {
-  Logger.log('=== submitBondApplication START ===');
-  
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName('Bond Applications');
-    
-    // Create sheet if it doesn't exist
-    if (!sheet) {
-      Logger.log('Creating Bond Applications sheet');
-      sheet = ss.insertSheet('Bond Applications');
-      
-      // Add headers
-      var headers = [
-        'Timestamp',
-        'Booking Number',
-        'Defendant Full Name',
-        'Defendant DOB',
-        'Defendant Phone',
-        'Defendant Email',
-        'Defendant Address',
-        'Defendant City',
-        'Defendant State',
-        'Defendant ZIP',
-        'Charges',
-        'Bond Amount',
-        'Bond Type',
-        'Case Number',
-        'County',
-        'Court Date',
-        'Court Time',
-        'Court Location',
-        'Indemnitor Name',
-        'Indemnitor Relationship',
-        'Indemnitor Phone',
-        'Indemnitor Email',
-        'Indemnitor Address',
-        'Indemnitor City',
-        'Indemnitor State',
-        'Indemnitor ZIP',
-        'Indemnitor Employer',
-        'Additional Notes'
-      ];
-      
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-      sheet.setFrozenRows(1);
+    // Add timestamp
+    var timestampCol = findColumn(headers, [
+      "Last Updated",
+      "Updated",
+      "Timestamp",
+    ]);
+    if (timestampCol > 0) {
+      sheet.getRange(row, timestampCol).setValue(new Date());
     }
-    
-    // Append form data
-    var timestamp = new Date();
-    var row = [
-      timestamp,
-      formData.bookingNumber || '',
-      formData.defendantFullName || '',
-      formData.defendantDOB || '',
-      formData.defendantPhone || '',
-      formData.defendantEmail || '',
-      formData.defendantAddress || '',
-      formData.defendantCity || '',
-      formData.defendantState || '',
-      formData.defendantZip || '',
-      formData.charges || '',
-      formData.bondAmount || '',
-      formData.bondType || '',
-      formData.caseNumber || '',
-      formData.county || '',
-      formData.courtDate || '',
-      formData.courtTime || '',
-      formData.courtLocation || '',
-      formData.indemnitorName || '',
-      formData.indemnitorRelationship || '',
-      formData.indemnitorPhone || '',
-      formData.indemnitorEmail || '',
-      formData.indemnitorAddress || '',
-      formData.indemnitorCity || '',
-      formData.indemnitorState || '',
-      formData.indemnitorZip || '',
-      formData.indemnitorEmployer || '',
-      formData.additionalNotes || ''
-    ];
-    
-    sheet.appendRow(row);
-    
-    Logger.log('=== submitBondApplication SUCCESS ===');
-    
-    return {
-      success: true,
-      message: 'Application submitted successfully',
-      timestamp: timestamp
-    };
-    
+
+    Logger.log("Successfully saved bond application for row " + row);
+    return { success: true, message: "Bond application saved successfully" };
   } catch (error) {
-    Logger.log('=== submitBondApplication ERROR ===');
-    Logger.log('Error: ' + error.message);
-    
-    throw new Error('Failed to submit application: ' + error.message);
+    Logger.log("Error in saveBondApplication: " + error.toString());
+    throw new Error("Failed to save bond application: " + error.message);
   }
 }
 
 /**
- * Test function - Run this in Apps Script to verify everything works
+ * Helper function to find a column by multiple possible names
+ */
+function findColumn(headers, searchTerms) {
+  for (var i = 0; i < headers.length; i++) {
+    var headerLower = headers[i].toString().toLowerCase();
+    for (var j = 0; j < searchTerms.length; j++) {
+      if (headerLower.includes(searchTerms[j].toLowerCase())) {
+        return i + 1; // Return 1-based column index
+      }
+    }
+  }
+  return -1; // Not found
+}
+
+/**
+ * Generates PDF from the bond application form
+ */
+function generatePDF() {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var row = sheet.getActiveRange().getRow();
+
+    if (row <= 1) {
+      SpreadsheetApp.getUi().alert("Please select an arrest record row first.");
+      return;
+    }
+
+    // Get the data for PDF generation
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var rowData = sheet.getRange(row, 1, 1, lastCol).getValues()[0];
+
+    // Create a new Google Doc for the PDF
+    var docName = "Bond_Application_" + rowData[0] + "_" + new Date().getTime();
+    var doc = DocumentApp.create(docName);
+    var body = doc.getBody();
+
+    // Add title
+    body
+      .appendParagraph("BOND APPLICATION FORM")
+      .setHeading(DocumentApp.ParagraphHeading.HEADING1)
+      .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+
+    body.appendHorizontalRule();
+
+    // Add data
+    for (var i = 0; i < headers.length; i++) {
+      if (rowData[i]) {
+        var para = body.appendParagraph(headers[i] + ": " + rowData[i]);
+        para.setSpacingAfter(8);
+      }
+    }
+
+    // Save and close the document
+    doc.saveAndClose();
+
+    // Get PDF blob
+    var docFile = DriveApp.getFileById(doc.getId());
+    var pdfBlob = docFile.getAs("application/pdf");
+
+    // Save PDF to Drive
+    var pdfFile = DriveApp.createFile(pdfBlob);
+    pdfFile.setName(docName + ".pdf");
+
+    // Delete the temporary doc
+    docFile.setTrashed(true);
+
+    SpreadsheetApp.getUi().alert(
+      "PDF generated successfully!\n\nFile: " +
+        pdfFile.getName() +
+        "\nURL: " +
+        pdfFile.getUrl()
+    );
+
+    return pdfFile.getUrl();
+  } catch (error) {
+    Logger.log("Error in generatePDF: " + error.toString());
+    SpreadsheetApp.getUi().alert("Error generating PDF: " + error.message);
+    throw error;
+  }
+}
+
+/**
+ * Test function to debug data retrieval
  */
 function testGetArrestData() {
-  Logger.log('=== TEST START ===');
-  
-  // CHANGE THESE TO MATCH YOUR ACTUAL DATA
-  var bookingNumber = '1013788';  // Replace with actual booking number
-  var rowIndex = 69;              // Replace with actual row number (NOT zero-indexed)
-  
-  Logger.log('Testing with booking: ' + bookingNumber + ', row: ' + rowIndex);
-  
   try {
-    var data = getArrestDataForForm(bookingNumber, rowIndex);
-    
-    Logger.log('=== TEST RESULTS ===');
-    Logger.log('Data type: ' + typeof data);
-    Logger.log('Is Array: ' + Array.isArray(data));
-    Logger.log('Keys count: ' + Object.keys(data).length);
-    Logger.log('First 20 keys: ' + Object.keys(data).slice(0, 20).join(', '));
-    
-    Logger.log('\n=== SAMPLE VALUES ===');
-    Logger.log('County: ' + data.County);
-    Logger.log('Full_Name: ' + data.Full_Name);
-    Logger.log('DOB: ' + data.DOB);
-    Logger.log('Booking_Number: ' + data.Booking_Number);
-    Logger.log('All_Charges: ' + data.All_Charges);
-    Logger.log('Bond_Amount: ' + data.Bond_Amount);
-    Logger.log('Address: ' + data.Address);
-    Logger.log('City: ' + data.City);
-    Logger.log('State: ' + data.State);
-    Logger.log('ZIP: ' + data.ZIP);
-    
-    Logger.log('\n=== TEST SUCCESS ===');
-    Logger.log('✅ Data is an OBJECT with ' + Object.keys(data).length + ' keys');
-    Logger.log('✅ Ready to deploy!');
-    
+    // Set a test row
+    PropertiesService.getScriptProperties().setProperty("ACTIVE_ROW", "2");
+
+    var data = getArrestData();
+    Logger.log("Test data: " + JSON.stringify(data));
+
+    return data;
   } catch (error) {
-    Logger.log('=== TEST FAILED ===');
-    Logger.log('Error: ' + error.message);
-    Logger.log('Stack: ' + error.stack);
-  }
-}
-
-/**
- * Helper function to check sheet structure
- */
-function debugSheetStructure() {
-  Logger.log('=== SHEET STRUCTURE DEBUG ===');
-  
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Lee County Arrests');
-  
-  if (!sheet) {
-    Logger.log('ERROR: Sheet "Lee County Arrests" not found');
-    Logger.log('Available sheets:');
-    var sheets = ss.getSheets();
-    for (var i = 0; i < sheets.length; i++) {
-      Logger.log('  - ' + sheets[i].getName());
-    }
-    return;
-  }
-  
-  Logger.log('Sheet found: ' + sheet.getName());
-  Logger.log('Last row: ' + sheet.getLastRow());
-  Logger.log('Last column: ' + sheet.getLastColumn());
-  
-  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  Logger.log('Headers (' + headers.length + ' total):');
-  
-  for (var i = 0; i < headers.length; i++) {
-    var header = headers[i];
-    var displayValue = header ? '"' + header + '"' : '(empty)';
-    Logger.log('  [' + i + '] ' + displayValue);
-  }
-  
-  Logger.log('=== DEBUG COMPLETE ===');
-}
-
-/**
- * Emergency debug function
- */
-function emergencyDebug() {
-  Logger.log('=== EMERGENCY DEBUG ===');
-  
-  var sheet = SpreadsheetApp.getActiveSpreadsheet()
-    .getSheetByName('Lee County Arrests');
-  
-  var headers = sheet.getRange(1, 1, 1, 10).getValues()[0];
-  Logger.log('First 10 headers:');
-  for (var i = 0; i < headers.length; i++) {
-    Logger.log('  [' + i + '] = ' + (headers[i] || '(empty)'));
-  }
-  
-  var dataRow = sheet.getRange(69, 1, 1, 10).getValues()[0];
-  Logger.log('First 10 values from row 69:');
-  for (var i = 0; i < dataRow.length; i++) {
-    Logger.log('  [' + i + '] = ' + dataRow[i]);
-  }
-  
-  try {
-    var data = getArrestDataForForm('1013788', 69);
-    Logger.log('\nRetrieved data:');
-    Logger.log('Type: ' + typeof data);
-    Logger.log('Is Array: ' + Array.isArray(data));
-    Logger.log('Keys: ' + Object.keys(data).slice(0, 10).join(', '));
-  } catch (e) {
-    Logger.log('\nError retrieving data: ' + e.message);
+    Logger.log("Test error: " + error.toString());
+    throw error;
   }
 }
