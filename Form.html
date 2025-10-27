@@ -744,45 +744,305 @@
     </div>
 
     <script>
-        /* ===== Your existing JS (unchanged) ===== */
-        let charges = []; let chargeCounter = 0;
-        window.onload = function () { const bookingNumber = window.FORM_DATA ? window.FORM_DATA.booking : null; const rowIndex = window.FORM_DATA ? window.FORM_DATA.row : null; if (bookingNumber && rowIndex) { document.getElementById('autoFillBadge').style.display = 'inline-flex'; loadArrestData(bookingNumber, parseInt(rowIndex)); } else { addCharge(); } };
-        function switchTab(index) { const tabs = document.querySelectorAll('.tab'); const contents = document.querySelectorAll('.tab-content'); tabs.forEach((t, i) => { i === index ? (t.classList.add('active'), contents[i].classList.add('active')) : (t.classList.remove('active'), contents[i].classList.remove('active')); }); document.getElementById('progressFill').style.width = ((index + 1) / 4 * 100) + '%'; if (index === 3) updateReviewTab(); }
+        // ========== CRITICAL FIX: Initialize ALL_MAPS to prevent errors ==========
+        window.ALL_MAPS = window.ALL_MAPS || {};
+        
+        // ========== GLOBAL STATE ==========
+        let charges = [];
+        let chargeCounter = 0;
+
+        console.log('🚀 Form script initializing...');
+        console.log('📦 window.FORM_DATA at script load:', window.FORM_DATA);
+
+        // ========== INITIALIZATION ==========
+        window.onload = function() {
+            console.log('✅ window.onload fired');
+            console.log('📦 window.FORM_DATA in onload:', window.FORM_DATA);
+            
+            const bookingNumber = window.FORM_DATA ? window.FORM_DATA.booking : null;
+            const rowIndex = window.FORM_DATA ? window.FORM_DATA.row : null;
+            
+            if (bookingNumber && rowIndex) {
+                console.log('📞 Calling loadArrestData with booking:', bookingNumber, 'row:', rowIndex);
+                document.getElementById('autoFillBadge').style.display = 'inline-flex';
+                loadArrestData(bookingNumber, parseInt(rowIndex));
+            } else {
+                console.warn('⚠️ No FORM_DATA found, adding empty charge');
+                addCharge();
+            }
+        };
+
+        // ========== TAB SWITCHING ==========
+        function switchTab(index) {
+            const tabs = document.querySelectorAll('.tab');
+            const contents = document.querySelectorAll('.tab-content');
+            
+            tabs.forEach((t, i) => {
+                if (i === index) {
+                    t.classList.add('active');
+                    contents[i].classList.add('active');
+                } else {
+                    t.classList.remove('active');
+                    contents[i].classList.remove('active');
+                }
+            });
+            
+            const progress = ((index + 1) / 4 * 100) + '%';
+            document.getElementById('progressFill').style.width = progress;
+            
+            if (index === 3) {
+                updateReviewTab();
+            }
+        }
+
+        // ========== CHARGE MANAGEMENT ==========
         function addCharge() {
-            chargeCounter++; const id = chargeCounter; const html = `<div class="charge-item" id="charge-${id}">
-  <h4>Charge #${id}</h4>
-  <div class="form-row">
-    <div class="form-group"><label class="required">Offense/Charge Description</label><input type="text" id="charge${id}Description" oninput="updatePremiums()" required></div>
-    <div class="form-group"><label class="required">Case Number</label><input type="text" id="charge${id}CaseNumber" required></div>
-  </div>
-  <div class="form-row">
-    <div class="form-group"><label class="required">Bond Amount ($)</label><input type="number" id="charge${id}BondAmount" step="0.01" oninput="updatePremiums()" required></div>
-    <div class="form-group"><label>Premium ($) - Auto-Calculated</label><input type="number" id="charge${id}Premium" step="0.01" readonly style="background:#0b0e12"></div>
-  </div>
-  <div class="form-row">
-    <div class="form-group"><label>Court Location</label><input type="text" id="charge${id}CourtLocation" placeholder="Circuit Court"></div>
-    <div class="form-group"><label>Hearing Date & Time</label><input type="text" id="charge${id}Hearing" placeholder="MM/DD/YYYY, HH:MM AM/PM"></div>
-  </div>
-  ${id > 1 ? '<button class="btn btn-danger" onclick="removeCharge(' + id + ')">Remove Charge</button>' : ''}
-</div>`; document.getElementById('chargesContainer').insertAdjacentHTML('beforeend', html); charges.push(id); updatePremiums();
+            chargeCounter++;
+            const id = chargeCounter;
+            
+            const html = `
+                <div class="charge-item" id="charge-${id}">
+                    <h4>Charge #${id}</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="required">Offense/Charge Description</label>
+                            <input type="text" id="charge${id}Description" oninput="updatePremiums()" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="required">Case Number</label>
+                            <input type="text" id="charge${id}CaseNumber" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="required">Bond Amount ($)</label>
+                            <input type="number" id="charge${id}BondAmount" step="0.01" oninput="updatePremiums()" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Premium ($) - Auto-Calculated</label>
+                            <input type="number" id="charge${id}Premium" step="0.01" readonly style="background:#0b0e12">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Court Location</label>
+                            <input type="text" id="charge${id}CourtLocation" placeholder="Circuit Court">
+                        </div>
+                        <div class="form-group">
+                            <label>Hearing Date & Time</label>
+                            <input type="text" id="charge${id}Hearing" placeholder="MM/DD/YYYY, HH:MM AM/PM">
+                        </div>
+                    </div>
+                    ${id > 1 ? '<button class="btn btn-danger" onclick="removeCharge(' + id + ')">Remove Charge</button>' : ''}
+                </div>
+            `;
+            
+            document.getElementById('chargesContainer').insertAdjacentHTML('beforeend', html);
+            charges.push(id);
+            updatePremiums();
         }
-        function removeCharge(id) { document.getElementById(`charge-${id}`).remove(); charges = charges.filter(c => c !== id); updatePremiums(); }
-        function calculatePremium(bond) { const a = parseFloat(bond) || 0; return a < 1000 ? 100 : a * 0.10; }
-        function updatePremiums() { let tb = 0, tp = 0, bd = ''; charges.forEach((id, i) => { const b = document.getElementById(`charge${id}BondAmount`); const p = document.getElementById(`charge${id}Premium`); const d = document.getElementById(`charge${id}Description`); if (b && b.value) { const val = parseFloat(b.value) || 0; const prem = calculatePremium(val); if (p) p.value = prem.toFixed(2); tb += val; tp += prem; const txt = d ? (d.value.substring(0, 40) || `Charge #${i + 1}`) : `Charge #${i + 1}`; bd += `<div style="margin:5px 0;padding:8px;background:#0b0e12;border:1px solid #1d232b;border-radius:8px">${txt}: $${val.toFixed(2)} → <strong>$${prem.toFixed(2)}</strong></div>`; } }); document.getElementById('premiumBreakdown').innerHTML = bd || '<div>Add charges to see premium breakdown</div>'; document.getElementById('totalBond').textContent = '$' + tb.toFixed(2); document.getElementById('totalPremium').textContent = '$' + tp.toFixed(2); }
-        function updateReviewTab() { const n = document.getElementById('defendantFullName').value || '-'; document.getElementById('reviewDefendantName').textContent = n; document.getElementById('reviewChargeCount').textContent = charges.length; document.getElementById('reviewTotalBond').textContent = document.getElementById('totalBond').textContent; document.getElementById('reviewTotalPremium').textContent = document.getElementById('totalPremium').textContent; }
-        function loadArrestData(booking, row) { google.script.run.withSuccessHandler(populateFormFromArrest).withFailureHandler(e => { console.error('Error loading arrest data:', e); alert('Error loading arrest data: ' + e.message); addCharge(); }).getArrestDataForForm(booking, row); }
+
+        function removeCharge(id) {
+            document.getElementById(`charge-${id}`).remove();
+            charges = charges.filter(c => c !== id);
+            updatePremiums();
+        }
+
+        // ========== PREMIUM CALCULATION ==========
+        function calculatePremium(bondAmount) {
+            const amount = parseFloat(bondAmount) || 0;
+            return amount < 1000 ? 100 : amount * 0.10;
+        }
+
+        function updatePremiums() {
+            let totalBond = 0;
+            let totalPremium = 0;
+            let breakdown = '';
+            
+            charges.forEach((id, index) => {
+                const bondInput = document.getElementById(`charge${id}BondAmount`);
+                const premiumInput = document.getElementById(`charge${id}Premium`);
+                const descInput = document.getElementById(`charge${id}Description`);
+                
+                if (bondInput && bondInput.value) {
+                    const bondValue = parseFloat(bondInput.value) || 0;
+                    const premium = calculatePremium(bondValue);
+                    
+                    if (premiumInput) {
+                        premiumInput.value = premium.toFixed(2);
+                    }
+                    
+                    totalBond += bondValue;
+                    totalPremium += premium;
+                    
+                    const chargeText = descInput ? (descInput.value.substring(0, 40) || `Charge #${index + 1}`) : `Charge #${index + 1}`;
+                    breakdown += `
+                        <div style="margin:5px 0;padding:8px;background:#0b0e12;border:1px solid #1d232b;border-radius:8px">
+                            ${chargeText}: $${bondValue.toFixed(2)} → <strong>$${premium.toFixed(2)}</strong>
+                        </div>
+                    `;
+                }
+            });
+            
+            document.getElementById('premiumBreakdown').innerHTML = breakdown || '<div>Add charges to see premium breakdown</div>';
+            document.getElementById('totalBond').textContent = '$' + totalBond.toFixed(2);
+            document.getElementById('totalPremium').textContent = '$' + totalPremium.toFixed(2);
+        }
+
+        // ========== REVIEW TAB ==========
+        function updateReviewTab() {
+            const name = document.getElementById('defendantFullName').value || '-';
+            document.getElementById('reviewDefendantName').textContent = name;
+            document.getElementById('reviewChargeCount').textContent = charges.length;
+            document.getElementById('reviewTotalBond').textContent = document.getElementById('totalBond').textContent;
+            document.getElementById('reviewTotalPremium').textContent = document.getElementById('totalPremium').textContent;
+        }
+
+        // ========== LOAD ARREST DATA ==========
+        function loadArrestData(bookingNumber, rowIndex) {
+            console.log('📡 loadArrestData called with:', bookingNumber, rowIndex);
+            
+            google.script.run
+                .withSuccessHandler(function(data) {
+                    console.log('✅ Server returned data:', data);
+                    populateFormFromArrest(data);
+                })
+                .withFailureHandler(function(error) {
+                    console.error('❌ Server call failed:', error);
+                    alert('Error loading arrest data: ' + error.message);
+                    addCharge(); // Add empty charge as fallback
+                })
+                .getArrestDataForForm(bookingNumber, rowIndex);
+        }
+
+        // ========== POPULATE FORM (FIXED VERSION WITH DEBUGGING) ==========
         function populateFormFromArrest(data) {
-            const m = { 'defendantFullName': data.Full_Name, 'defendantDOB': data.DOB, 'defendantStreetAddress': data.Address, 'defendantCity': data.City, 'defendantDLState': data.State || 'FL', 'defendantZip': data.ZIP, 'defendantRace': data.Race, 'defendantSex': data.Sex, 'defendantHeight': data.Height, 'defendantWeight': data.Weight, 'defendantSSN': data.Person_ID };
-            Object.entries(m).forEach(([id, val]) => { if (val) { const el = document.getElementById(id); if (el) { el.value = val; el.classList.add('auto-filled'); } } });
-            const arr = (data.Charges || '').split(' | ').filter(c => c.trim() !== '');
-            if (arr.length) { const total = parseFloat(data.Bond_Amount) || 0; const per = arr.length ? total / arr.length : 0; const cases = (data.Case_Number || '').split(',').map(s => s.trim()); const loc = data.Court_Location || ''; const date = data.Court_Date || ''; const time = data.Court_Time || ''; const hear = date && time ? (date + ', ' + time) : ''; arr.forEach((chg, i) => { addCharge(); const id = charges[charges.length - 1]; const f = { [`charge${id}Description`]: chg, [`charge${id}BondAmount`]: per.toFixed(2), [`charge${id}CaseNumber`]: cases[i] || cases[0] || '', [`charge${id}CourtLocation`]: loc, [`charge${id}Hearing`]: hear }; Object.entries(f).forEach(([k, v]) => { const el = document.getElementById(k); if (el) { el.value = v; el.classList.add('auto-filled'); } }); }); updatePremiums(); }
-            else { addCharge(); }
-            if (google?.script?.run) { google.script.run.markFormOpened(data.Booking_Number); }
+            console.log('📥 populateFormFromArrest called');
+            console.log('📦 Data object:', data);
+            console.log('📋 Data keys:', Object.keys(data));
+            
+            if (!data) {
+                console.error('❌ No data provided to populateFormFromArrest');
+                addCharge();
+                return;
+            }
+
+            // Field mapping with flexible key matching
+            const fieldMappings = {
+                'defendantFullName': data.Full_Name || data['Full Name'] || data.full_name || '',
+                'defendantDOB': data.DOB || data.dob || data.Date_of_Birth || '',
+                'defendantStreetAddress': data.Address || data.address || data.Street_Address || '',
+                'defendantCity': data.City || data.city || '',
+                'defendantDLState': data.State || data.state || 'FL',
+                'defendantZip': data.ZIP || data.Zip || data.zip || data.Zip_Code || '',
+                'defendantRace': data.Race || data.race || '',
+                'defendantSex': data.Sex || data.sex || data.Gender || '',
+                'defendantHeight': data.Height || data.height || '',
+                'defendantWeight': data.Weight || data.weight || '',
+                'defendantSSN': data.Person_ID || data['Person ID'] || data.person_id || ''
+            };
+
+            console.log('🗺️ Field mappings created:', fieldMappings);
+
+            // Populate defendant fields
+            let populatedCount = 0;
+            let notFoundCount = 0;
+
+            Object.entries(fieldMappings).forEach(function([fieldId, value]) {
+                const element = document.getElementById(fieldId);
+                
+                if (element) {
+                    if (value && String(value).trim() !== '' && String(value) !== 'undefined') {
+                        element.value = String(value);
+                        element.classList.add('auto-filled');
+                        populatedCount++;
+                        console.log('✅ Set ' + fieldId + ' = ' + value);
+                    } else {
+                        console.log('⏭️ Skipped ' + fieldId + ' (no data)');
+                    }
+                } else {
+                    notFoundCount++;
+                    console.warn('⚠️ Element not found: ' + fieldId);
+                }
+            });
+
+            console.log('📊 Populated ' + populatedCount + ' fields, ' + notFoundCount + ' elements not found');
+
+            // Handle charges with flexible key names
+            const chargesData = data.All_Charges || data.Charges || data.charges || data['All Charges'] || '';
+            console.log('⚖️ Charges data:', chargesData);
+            
+            const chargesArray = String(chargesData)
+                .split('|')
+                .map(c => c.trim())
+                .filter(c => c !== '' && c !== 'undefined');
+            
+            console.log('⚖️ Parsed charges array:', chargesArray);
+
+            if (chargesArray.length > 0) {
+                const totalBondAmount = parseFloat(data.Bond_Amount || data.bond_amount || 0);
+                const perChargeBond = chargesArray.length ? totalBondAmount / chargesArray.length : 0;
+                
+                // Parse case numbers with flexible key names
+                const caseNumbersData = data.Case_Numbers || data['Case Numbers'] || data.case_numbers || data.Case_Number || '';
+                const caseNumbers = String(caseNumbersData)
+                    .split(',')
+                    .map(s => s.trim());
+                
+                const courtLocation = data.Court_Location || data.court_location || '';
+                const courtDate = data.Court_Date || data.court_date || '';
+                const courtTime = data.Court_Time || data.court_time || '';
+                const hearing = courtDate && courtTime ? (courtDate + ', ' + courtTime) : '';
+
+                console.log('📝 Creating ' + chargesArray.length + ' charge items');
+
+                chargesArray.forEach(function(charge, index) {
+                    addCharge();
+                    const chargeId = charges[charges.length - 1];
+                    
+                    const chargeFields = {
+                        [`charge${chargeId}Description`]: charge,
+                        [`charge${chargeId}BondAmount`]: perChargeBond.toFixed(2),
+                        [`charge${chargeId}CaseNumber`]: caseNumbers[index] || caseNumbers[0] || '',
+                        [`charge${chargeId}CourtLocation`]: courtLocation,
+                        [`charge${chargeId}Hearing`]: hearing
+                    };
+
+                    Object.entries(chargeFields).forEach(function([fieldId, value]) {
+                        const element = document.getElementById(fieldId);
+                        if (element && value) {
+                            element.value = value;
+                            element.classList.add('auto-filled');
+                            console.log('✅ Set charge field ' + fieldId + ' = ' + value);
+                        }
+                    });
+                });
+
+                updatePremiums();
+                console.log('✅ Charges populated and premiums calculated');
+            } else {
+                console.log('⚠️ No charges found in data, adding empty charge');
+                addCharge();
+            }
+
+            console.log('✅ Form population complete');
+
+            // Optional: Mark form as opened in the sheet
+            if (typeof google !== 'undefined' && google.script && google.script.run && google.script.run.markFormOpened) {
+                google.script.run.markFormOpened(data.Booking_Number || data.booking_number);
+            }
         }
+
+        // ========== FORM SUBMISSION ==========
         function submitForm() {
-            const dn = document.getElementById('defendantFullName').value;
-            const iname = document.getElementById('indemnitorFullName').value;
-            if (!dn || !iname || charges.length === 0) { alert('Please fill in all required fields before submitting.'); return; }
+            const defendantName = document.getElementById('defendantFullName').value;
+            const indemnitorName = document.getElementById('indemnitorFullName').value;
+            
+            if (!defendantName || !indemnitorName || charges.length === 0) {
+                alert('Please fill in all required fields before submitting.');
+                return;
+            }
+            
             alert('Form submission will be implemented with SignNow integration.\n\nFor now, this is a preview of the complete form.');
         }
     </script>
